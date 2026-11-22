@@ -3,7 +3,7 @@
 import { Fragment, useMemo, type ReactNode } from "react";
 
 import type { DriverInfo, Provenance } from "@/lib/api";
-import { delta as fmtDelta, teamColour } from "@/lib/format";
+import { delta as fmtDelta, nameDrivers, teamColour } from "@/lib/format";
 import { ConfidenceBadge, NoteList, ProvenanceBadge } from "./ui";
 
 /* ------------------------------------------------------------------ */
@@ -45,11 +45,6 @@ function readEvidence(evidence: Record<string, unknown>): EvidenceView {
 function nameOf(drivers: DriverInfo[], number: number | undefined, fallback: string) {
   const driver = drivers.find((d) => d.driver_number === number);
   return driver?.name_acronym ?? (number != null ? `#${number}` : fallback);
-}
-
-/** Keeps the backend's wording but says who "driver A" and "driver B" are. */
-function nameDrivers(text: string, a: string, b: string) {
-  return text.replace(/\bdriver A\b/g, a).replace(/\bdriver B\b/g, b);
 }
 
 /* ------------------------------------------------------------------ */

@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { EChartsOption } from "echarts";
+import { motion, useReducedMotion } from "framer-motion";
 
 import { AgentControl } from "@/components/AgentControl";
 import { Markdown } from "@/components/Markdown";
 import { CHART_BASE, Chart, Empty, Panel, ProvenanceBadge, axis } from "@/components/ui";
+import { useFlash } from "@/lib/motion";
 import {
   liveApi,
   type LiveCommentary,
@@ -266,6 +268,29 @@ function StatusStrip({ state }: { state: LiveState }) {
 /* Timing tower                                                        */
 /* ------------------------------------------------------------------ */
 
+/** A cell that flashes the moment its displayed value changes. */
+function LiveFlashCell({
+  value,
+  color,
+  className = "",
+  children,
+}: {
+  value: unknown;
+  color: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const flash = useFlash(value);
+  return (
+    <div
+      className={`rounded-sm ${className} ${flash ? "animate-flash" : ""}`}
+      style={flash ? ({ "--flash": color } as CSSProperties) : undefined}
+    >
+      {children}
+    </div>
+  );
+}
+
 function TimingTower({
   drivers,
   selected,
@@ -275,80 +300,138 @@ function TimingTower({
   selected: string | null;
   onSelect: (num: string) => void;
 }) {
+  const reduce = useReducedMotion();
+  const template = [
+    "2.2rem", // pos
+    "minmax(6.5rem,1fr)", // driver
+    "4.4rem", // gap
+    "4.4rem", // interval
+    "4.8rem", // last
+    "4.8rem", // best
+    "3.2rem", // s1
+    "3.2rem", // s2
+    "3.2rem", // s3
+    "4.2rem", // tyre
+    "2.4rem", // pit
+  ].join(" ");
+  const gridStyle: CSSProperties = { gridTemplateColumns: template, minWidth: "48rem" };
+
   return (
-    <table className="data-table [&_td]:px-1.5 [&_th]:px-1.5">
-      <thead>
-        <tr>
-          <th className="w-8">P</th>
-          <th>Driver</th>
-          <th className="text-right">Gap</th>
-          <th className="text-right">Int</th>
-          <th className="text-right">Last</th>
-          <th className="text-right">Best</th>
-          <th className="text-right">S1</th>
-          <th className="text-right">S2</th>
-          <th className="text-right">S3</th>
-          <th>Tyre</th>
-          <th className="text-right">Pit</th>
-        </tr>
-      </thead>
-      <tbody>
-        {drivers.map((d) => {
-          const out = d.retired || d.stopped;
-          return (
-            <tr
-              key={d.num}
-              onClick={() => onSelect(d.num)}
-              className={`cursor-pointer ${out ? "opacity-50" : ""} ${selected === d.num ? "bg-graphite-800" : ""}`}
+    <div>
+      <div className="tower-head" style={gridStyle}>
+        <span className="text-center">P</span>
+        <span>Driver</span>
+        <span className="tower-sep text-right">Gap</span>
+        <span className="text-right text-ink-faint/80">Int</span>
+        <span className="tower-sep text-right">Last</span>
+        <span className="text-right">Best</span>
+        <span className="tower-sep text-right">S1</span>
+        <span className="text-right">S2</span>
+        <span className="text-right">S3</span>
+        <span className="tower-sep">Tyre</span>
+        <span className="text-right">Pit</span>
+      </div>
+      <div>
+        {drivers.map((d) => (
+          <LiveTowerRow
+            key={d.num}
+            d={d}
+            gridStyle={gridStyle}
+            isSelected={selected === d.num}
+            onSelect={onSelect}
+            animate={!reduce}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LiveTowerRow({
+  d,
+  gridStyle,
+  isSelected,
+  onSelect,
+  animate,
+}: {
+  d: LiveDriver;
+  gridStyle: CSSProperties;
+  isSelected: boolean;
+  onSelect: (num: string) => void;
+  animate: boolean;
+}) {
+  const team = teamColour(d.team_colour);
+  const out = d.retired || d.stopped;
+  const sweep = useFlash(d.last_fastest ? d.last_lap : null) && d.last_fastest;
+
+  return (
+    <motion.div
+      layout={animate ? "position" : false}
+      transition={{ type: "spring", stiffness: 520, damping: 42, mass: 0.7 }}
+      onClick={() => onSelect(d.num)}
+      className={`tower-row cursor-pointer ${out ? "opacity-50" : ""} ${
+        isSelected ? "bg-graphite-800" : ""
+      } ${sweep ? "animate-best-sweep" : ""}`}
+      style={{ ...gridStyle, ["--team" as string]: team } as CSSProperties}
+    >
+      <div className="flex justify-center">
+        <span className="pos-box" style={{ ["--team" as string]: team } as CSSProperties}>
+          {d.pos || DASH}
+        </span>
+      </div>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="num truncate font-semibold text-ink" title={`${d.name ?? ""} · ${d.team ?? ""}`}>
+          {d.tla}
+        </span>
+        {d.in_pit && <span className="rounded-sm bg-signal-warn/15 px-1 text-2xs font-bold text-signal-warn">PIT</span>}
+        {d.retired && <span className="rounded-sm bg-signal-alert/15 px-1 text-2xs font-bold text-signal-alert">OUT</span>}
+        {d.stopped && !d.retired && <span className="rounded-sm bg-signal-alert/15 px-1 text-2xs font-bold text-signal-alert">STOP</span>}
+        {d.knocked_out && <span className="rounded-sm bg-graphite-700 px-1 text-2xs font-bold text-ink-faint">KO</span>}
+      </div>
+      <div className="num tower-sep text-right font-medium text-ink">{d.pos === 1 ? "LEADER" : d.gap || DASH}</div>
+      <div className={`num text-right text-2xs ${d.catching ? "text-signal-ok" : "text-ink-faint"}`}>
+        {d.pos === 1 ? DASH : d.interval || DASH}
+      </div>
+      <LiveFlashCell
+        value={d.last_lap}
+        color={d.last_fastest ? "#c77dff" : "#4da6ff"}
+        className={`num tower-sep text-right ${d.last_fastest ? "text-signal-purple" : d.last_pb ? "text-signal-ok" : "text-ink"}`}
+      >
+        {d.last_lap || DASH}
+      </LiveFlashCell>
+      <div className="num text-right text-ink-muted">{d.best_lap || DASH}</div>
+      {[0, 1, 2].map((i) => {
+        const s = d.sectors[i];
+        return (
+          <LiveFlashCell
+            key={i}
+            value={s?.value}
+            color={s?.fastest ? "#c77dff" : s?.pb ? "#2ee6a8" : "#4da6ff"}
+            className={`num text-right text-2xs ${i === 0 ? "tower-sep" : ""} ${
+              s?.fastest ? "text-signal-purple" : s?.pb ? "text-signal-ok" : "text-ink-faint"
+            }`}
+          >
+            {s?.value || DASH}
+          </LiveFlashCell>
+        );
+      })}
+      <div className="tower-sep">
+        {d.compound ? (
+          <div className="flex items-center gap-1.5" title={`${d.compound}${d.tyre_new ? " (new set)" : " (used set)"}, ${d.tyre_age ?? "?"} laps old`}>
+            <span
+              className="tyre-pill"
+              style={{ borderColor: compoundColour(d.compound), color: compoundColour(d.compound) }}
             >
-              <td className="num text-ink-muted">{d.pos || DASH}</td>
-              <td>
-                <div className="flex items-center gap-2">
-                  <span className="h-4 w-0.5 rounded-sm" style={{ background: teamColour(d.team_colour) }} aria-hidden />
-                  <span className="num font-semibold text-ink" title={`${d.name ?? ""} · ${d.team ?? ""}`}>{d.tla}</span>
-                  {d.in_pit && <span className="rounded-sm bg-signal-warn/15 px-1 text-2xs font-bold text-signal-warn">PIT</span>}
-                  {d.retired && <span className="rounded-sm bg-signal-alert/15 px-1 text-2xs font-bold text-signal-alert">OUT</span>}
-                  {d.stopped && !d.retired && <span className="rounded-sm bg-signal-alert/15 px-1 text-2xs font-bold text-signal-alert">STOP</span>}
-                  {d.knocked_out && <span className="rounded-sm bg-graphite-700 px-1 text-2xs font-bold text-ink-faint">KO</span>}
-                </div>
-              </td>
-              <td className="num text-right text-ink-muted">{d.pos === 1 ? "LEADER" : d.gap || DASH}</td>
-              <td className={`num text-right ${d.catching ? "text-signal-ok" : "text-ink-muted"}`}>
-                {d.pos === 1 ? DASH : d.interval || DASH}
-              </td>
-              <td className={`num text-right ${d.last_fastest ? "text-signal-purple" : d.last_pb ? "text-signal-ok" : "text-ink"}`}>
-                {d.last_lap || DASH}
-              </td>
-              <td className="num text-right text-ink-muted">{d.best_lap || DASH}</td>
-              {[0, 1, 2].map((i) => {
-                const s = d.sectors[i];
-                return (
-                  <td key={i} className={`num text-right ${s?.fastest ? "text-signal-purple" : s?.pb ? "text-signal-ok" : "text-ink-muted"}`}>
-                    {s?.value || DASH}
-                  </td>
-                );
-              })}
-              <td>
-                {d.compound ? (
-                  <div className="flex items-center gap-1.5" title={`${d.compound}${d.tyre_new ? " (new set)" : " (used set)"}, ${d.tyre_age ?? "?"} laps old`}>
-                    <span
-                      className="flex h-4 w-4 items-center justify-center rounded-full border text-2xs font-bold"
-                      style={{ borderColor: compoundColour(d.compound), color: compoundColour(d.compound) }}
-                    >
-                      {compoundLetter(d.compound)}
-                    </span>
-                    <span className="num text-2xs text-ink-faint">{d.tyre_age ?? DASH}L{d.tyre_new ? "*" : ""}</span>
-                  </div>
-                ) : (
-                  <span className="text-2xs text-ink-faint">{DASH}</span>
-                )}
-              </td>
-              <td className="num text-right text-ink-faint">{d.pits}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+              {compoundLetter(d.compound)}
+            </span>
+            <span className="num text-2xs text-ink-faint">{d.tyre_age ?? DASH}L{d.tyre_new ? "*" : ""}</span>
+          </div>
+        ) : (
+          <span className="text-2xs text-ink-faint">{DASH}</span>
+        )}
+      </div>
+      <div className="num text-right text-2xs text-ink-faint">{d.pits}</div>
+    </motion.div>
   );
 }
 

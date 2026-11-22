@@ -78,6 +78,11 @@ export function compoundLetter(compound: string | null | undefined): string {
   return upper.charAt(0);
 }
 
+/** Keeps the backend's wording but says who "driver A" and "driver B" are. */
+export function nameDrivers(text: string, a: string, b: string): string {
+  return text.replace(/\bdriver A\b/g, a).replace(/\bdriver B\b/g, b);
+}
+
 export function teamColour(colour: string | null | undefined): string {
   if (!colour) return "#5d6670";
   return colour.startsWith("#") ? colour : `#${colour}`;

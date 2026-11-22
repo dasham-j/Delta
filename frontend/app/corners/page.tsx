@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import { CircuitMap, CornerChips } from "@/components/CircuitMap";
 import { DriverLapPicker } from "@/components/DriverLapPicker";
+import { Reveal } from "@/components/Motion";
 import { SessionPicker, useSelection } from "@/components/SessionPicker";
 import {
   ConfidenceBadge,
@@ -15,8 +16,19 @@ import {
   ProvenanceBadge,
   useAsync,
 } from "@/components/ui";
-import { api, type CornerComparison } from "@/lib/api";
-import { DASH, delta as fmtDelta, metres, signedSpeed, withUncertainty } from "@/lib/format";
+import { api, type CornerComparison, type DriverInfo } from "@/lib/api";
+import { DASH, metres, nameDrivers, teamColour, withUncertainty } from "@/lib/format";
+
+type Side = { name: string; colour: string };
+type Pair = { a: Side; b: Side };
+
+function sideFor(drivers: DriverInfo[], number: number | null, fallback: string): Side {
+  const driver = drivers.find((d) => d.driver_number === number);
+  return {
+    name: driver?.name_acronym ?? (number != null ? `#${number}` : fallback),
+    colour: teamColour(driver?.team_colour),
+  };
+}
 
 export default function CornersPage() {
   const [selection] = useSelection();
@@ -52,6 +64,17 @@ export default function CornersPage() {
     ],
     ready,
   );
+
+  const drivers = useAsync(
+    () => api.drivers(selection.sessionKey as number),
+    [selection.sessionKey],
+    selection.sessionKey != null,
+  );
+  const list = drivers.data?.drivers ?? [];
+  const pair: Pair = {
+    a: sideFor(list, selection.driverA, "Driver A"),
+    b: sideFor(list, selection.driverB, "Driver B"),
+  };
 
   const rows = analysis.data?.comparison ?? [];
   const visible = selected ? rows.filter((row) => row.corner === selected) : rows;
@@ -136,7 +159,10 @@ export default function CornersPage() {
           <ErrorPanel error={analysis.error} onRetry={analysis.reload} />
         </Panel>
       ) : analysis.data ? (
-        <>
+        <Reveal
+          className="space-y-3"
+          key={`${selection.sessionKey}-${selection.driverA}-${selection.driverB}-${selection.lapA}-${selection.lapB}`}
+        >
           <div className="grid gap-3 xl:grid-cols-[minmax(0,480px)_minmax(0,1fr)]">
             <Panel
               title="Circuit map"
@@ -190,14 +216,24 @@ export default function CornersPage() {
               selected ? `Turn ${selected} comparison` : "Corner-by-corner comparison"
             }
             right={
-              <span className="text-2xs text-ink-faint">
-                A = #{selection.driverA} · B = #{selection.driverB}
-              </span>
+              selected ? (
+                <button type="button" className="btn" onClick={() => setSelected(null)}>
+                  Show all corners
+                </button>
+              ) : null
             }
-            bodyClassName="overflow-auto"
           >
             {visible.length ? (
-              <CornerTable rows={visible} />
+              <CornerTable
+                rows={visible}
+                allRows={rows}
+                pair={pair}
+                selected={selected}
+                onSelect={setSelected}
+                approachM={Number(analysis.data.method.corner_detection.approach_m)}
+                exitM={Number(analysis.data.method.corner_detection.exit_m)}
+                confidenceHelp={analysis.data.method.explanation.confidence}
+              />
             ) : (
               <Empty
                 title="No corners detected at this threshold"
@@ -206,96 +242,271 @@ export default function CornersPage() {
             )}
           </Panel>
 
-          {visible.length === 1 && <CornerDetail row={visible[0]} />}
-        </>
+          {visible.length === 1 && <CornerDetail row={visible[0]} pair={pair} />}
+        </Reveal>
       ) : null}
     </div>
   );
 }
 
-function CornerTable({ rows }: { rows: CornerComparison[] }) {
+const TIME_LEVEL_S = 0.01;
+const SPEED_LEVEL_KPH = 1;
+
+function Who({ side }: { side: Side }) {
   return (
-    <table className="data-table">
-      <thead>
-        <tr>
-          <th>Corner</th>
-          <th className="text-right">A brake point</th>
-          <th className="text-right">B brake point</th>
-          <th className="text-right">Δ brake</th>
-          <th className="text-right">Δ min speed</th>
-          <th className="text-right">Δ exit speed</th>
-          <th className="text-right">Δt</th>
-          <th>Confidence</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => (
-          <tr key={row.corner}>
-            <td className="num font-semibold text-ink">T{row.corner}</td>
-            <td className="num text-right text-ink-muted">
-              {row.a.brake
-                ? withUncertainty(row.a.brake.onset_distance_m, row.a.brake.onset_uncertainty_m)
-                : DASH}
-            </td>
-            <td className="num text-right text-ink-muted">
-              {row.b.brake
-                ? withUncertainty(row.b.brake.onset_distance_m, row.b.brake.onset_uncertainty_m)
-                : DASH}
-            </td>
-            <td
-              className={`num text-right ${
-                row.brake_difference_significant ? "text-ink" : "text-ink-faint line-through"
-              }`}
-              title={
-                row.brake_difference_significant
-                  ? "Exceeds the combined sampling uncertainty of both traces."
-                  : "Within sampling uncertainty — not a distinguishable difference."
-              }
-            >
-              {row.brake_point_difference_m != null
-                ? `${row.brake_point_difference_m > 0 ? "+" : "−"}${Math.abs(
-                    row.brake_point_difference_m,
-                  ).toFixed(0)} m`
-                : DASH}
-            </td>
-            <td className="num text-right text-ink-muted">
-              {signedSpeed(row.min_speed_difference_kph)}
-            </td>
-            <td className="num text-right text-ink-muted">
-              {signedSpeed(row.exit_speed_difference_kph)}
-            </td>
-            <td
-              className={`num text-right ${
-                (row.time_delta_s ?? 0) > 0 ? "text-signal-alert" : "text-signal-ok"
-              }`}
-            >
-              {fmtDelta(row.time_delta_s)}
-            </td>
-            <td>
-              <ConfidenceBadge level={row.confidence} />
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <span className="inline-flex items-center gap-1.5 font-semibold text-ink">
+      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: side.colour }} aria-hidden />
+      {side.name}
+    </span>
   );
 }
 
-function CornerDetail({ row }: { row: CornerComparison }) {
+/** Names who had the advantage, so no one has to remember what a sign means. */
+function Advantage({ side, amount }: { side: Side | null; amount: string | null }) {
+  if (amount == null) return <span className="text-ink-faint">{DASH}</span>;
+  if (side == null) return <span className="text-ink-muted">{amount}</span>;
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <Who side={side} />
+      <span className="text-ink-muted">{amount}</span>
+    </span>
+  );
+}
+
+// The backend reports speed differences as B minus A.
+function SpeedCell({ value, pair }: { value: number | null; pair: Pair }) {
+  if (value == null) return <Advantage side={null} amount={null} />;
+  if (Math.abs(value) < SPEED_LEVEL_KPH) return <Advantage side={null} amount="Level" />;
+  return (
+    <Advantage side={value > 0 ? pair.b : pair.a} amount={`+${Math.abs(value).toFixed(1)} km/h`} />
+  );
+}
+
+// A positive brake difference means B braked further down the road.
+function BrakeCell({ row, pair }: { row: CornerComparison; pair: Pair }) {
+  const value = row.brake_point_difference_m;
+  if (value == null) {
+    return (
+      <span className="text-ink-faint" title="No comparable braking was detected for both drivers.">
+        No data
+      </span>
+    );
+  }
+  if (!row.brake_difference_significant) {
+    return (
+      <span
+        className="text-ink-faint"
+        title={`The ${Math.abs(value).toFixed(0)} m difference can't be separated from measurement error (±${(row.brake_point_uncertainty_m ?? 0).toFixed(0)} m).`}
+      >
+        Too close to call
+      </span>
+    );
+  }
+  return <Advantage side={value > 0 ? pair.b : pair.a} amount={`${Math.abs(value).toFixed(0)} m later`} />;
+}
+
+// A positive time delta means B fell further behind, so A gained.
+function TimeCell({ value, largest, pair }: { value: number | null; largest: number; pair: Pair }) {
+  const isLevel = value != null && Math.abs(value) < TIME_LEVEL_S;
+  const share = value != null && largest > 0 ? (Math.abs(value) / largest) * 100 : 0;
+  return (
+    <div className="min-w-[10rem]">
+      {value == null ? (
+        <Advantage side={null} amount={null} />
+      ) : isLevel ? (
+        <Advantage side={null} amount="Level" />
+      ) : (
+        <Advantage side={value > 0 ? pair.a : pair.b} amount={`+${Math.abs(value).toFixed(3)} s`} />
+      )}
+      <div className="mt-1 grid grid-cols-2 gap-px" aria-hidden>
+        <div className="flex h-1.5 justify-end border-r border-graphite-500">
+          {value != null && value > 0 && !isLevel && (
+            <span className="rounded-l" style={{ width: `${share}%`, background: pair.a.colour }} />
+          )}
+        </div>
+        <div className="flex h-1.5">
+          {value != null && value < 0 && !isLevel && (
+            <span className="rounded-r" style={{ width: `${share}%`, background: pair.b.colour }} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CornerSummary({
+  rows,
+  pair,
+  onSelect,
+}: {
+  rows: CornerComparison[];
+  pair: Pair;
+  onSelect: (corner: number) => void;
+}) {
+  const timed = rows.filter((r) => r.time_delta_s != null);
+  if (!timed.length) return null;
+  const forA = timed.filter((r) => (r.time_delta_s as number) >= TIME_LEVEL_S).length;
+  const forB = timed.filter((r) => (r.time_delta_s as number) <= -TIME_LEVEL_S).length;
+  const level = timed.length - forA - forB;
+  const biggest = timed.reduce((best, row) =>
+    Math.abs(row.time_delta_s as number) > Math.abs(best.time_delta_s as number) ? row : best,
+  );
+  const biggestValue = biggest.time_delta_s as number;
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-graphite-700 px-3 py-2.5 text-xs">
+      <p className="text-ink">
+        <span className="font-semibold">{pair.a.name}</span> gained in {forA}{" "}
+        {forA === 1 ? "corner" : "corners"}, <span className="font-semibold">{pair.b.name}</span> in{" "}
+        {forB}
+        {level > 0 && `, ${level} level`}
+      </p>
+      {Math.abs(biggestValue) >= TIME_LEVEL_S && (
+        <button
+          type="button"
+          className="text-ink-muted underline decoration-graphite-500 underline-offset-2 hover:text-ink"
+          onClick={() => onSelect(biggest.corner)}
+        >
+          Biggest swing: T{biggest.corner}, {biggestValue > 0 ? pair.a.name : pair.b.name} +
+          {Math.abs(biggestValue).toFixed(3)} s
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CornerTable({
+  rows,
+  allRows,
+  pair,
+  selected,
+  onSelect,
+  approachM,
+  exitM,
+  confidenceHelp,
+}: {
+  rows: CornerComparison[];
+  allRows: CornerComparison[];
+  pair: Pair;
+  selected: number | null;
+  onSelect: (corner: number | null) => void;
+  approachM: number;
+  exitM: number;
+  confidenceHelp?: string;
+}) {
+  const [sortBySwing, setSortBySwing] = useState(false);
+  // Scaled across every corner, so a bar keeps its size when one corner is selected.
+  const largest = Math.max(0, ...allRows.map((r) => Math.abs(r.time_delta_s ?? 0)));
+  const ordered = sortBySwing
+    ? [...rows].sort((x, y) => Math.abs(y.time_delta_s ?? 0) - Math.abs(x.time_delta_s ?? 0))
+    : rows;
+
+  return (
+    <>
+      {selected == null && <CornerSummary rows={allRows} pair={pair} onSelect={onSelect} />}
+      <div className="overflow-x-auto">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Corner</th>
+              <th title="Who was quicker through this stretch, and by how much.">Time gained</th>
+              <th title="Who started braking further down the road. Later isn't automatically better.">
+                Braked later
+              </th>
+              <th title="Who kept more speed at the slowest point of the corner.">Mid-corner speed</th>
+              <th title="Who was faster leaving the corner.">Exit speed</th>
+              <th title={confidenceHelp}>Confidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ordered.map((row) => {
+              const isSelected = selected === row.corner;
+              return (
+                <tr
+                  key={row.corner}
+                  className={`cursor-pointer ${isSelected ? "bg-graphite-800" : ""}`}
+                  onClick={() => onSelect(isSelected ? null : row.corner)}
+                >
+                  <td>
+                    <button
+                      type="button"
+                      aria-pressed={isSelected}
+                      aria-label={`Turn ${row.corner} details`}
+                      className="num font-semibold text-ink underline decoration-graphite-500 underline-offset-2"
+                    >
+                      T{row.corner}
+                    </button>
+                  </td>
+                  <td className="num">
+                    <TimeCell value={row.time_delta_s} largest={largest} pair={pair} />
+                  </td>
+                  <td className="num">
+                    <BrakeCell row={row} pair={pair} />
+                  </td>
+                  <td className="num">
+                    <SpeedCell value={row.min_speed_difference_kph} pair={pair} />
+                  </td>
+                  <td className="num">
+                    <SpeedCell value={row.exit_speed_difference_kph} pair={pair} />
+                  </td>
+                  <td>
+                    <ConfidenceBadge level={row.confidence} />
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 border-t border-graphite-700 px-3 py-2">
+        <p className="max-w-3xl text-2xs leading-relaxed text-ink-faint">
+          {selected == null && "Select a corner for its full details. "}
+          Time runs from {approachM} m before each corner to{" "}
+          {exitM} m after it, so neighbouring corners overlap and won&apos;t add up to the lap gap.
+        </p>
+        {selected == null && rows.length > 1 && (
+          <button type="button" className="btn shrink-0" onClick={() => setSortBySwing((v) => !v)}>
+            {sortBySwing ? "Sort by track order" : "Sort by biggest swing"}
+          </button>
+        )}
+      </div>
+    </>
+  );
+}
+
+function CornerDetail({ row, pair }: { row: CornerComparison; pair: Pair }) {
   return (
     <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,340px)]">
       <Panel title={`Turn ${row.corner} — what the data shows`} bodyClassName="p-3 space-y-3">
-        <p className="text-sm leading-relaxed text-ink">{row.interpretation}</p>
+        <p className="text-sm leading-relaxed text-ink">
+          {nameDrivers(row.interpretation, pair.a.name, pair.b.name)}
+        </p>
         <table className="data-table">
           <thead>
             <tr>
               <th>Measurement</th>
-              <th className="text-right">Driver A</th>
-              <th className="text-right">Driver B</th>
+              <th className="!text-right">{pair.a.name}</th>
+              <th className="!text-right">{pair.b.name}</th>
               <th>Source</th>
             </tr>
           </thead>
           <tbody>
+            <tr>
+              <td className="text-ink-muted">Brake point</td>
+              <td className="num text-right text-ink">
+                {row.a.brake
+                  ? withUncertainty(row.a.brake.onset_distance_m, row.a.brake.onset_uncertainty_m)
+                  : DASH}
+              </td>
+              <td className="num text-right text-ink">
+                {row.b.brake
+                  ? withUncertainty(row.b.brake.onset_distance_m, row.b.brake.onset_uncertainty_m)
+                  : DASH}
+              </td>
+              <td>
+                <ProvenanceBadge kind={row.a.brake?.provenance ?? "unavailable"} />
+              </td>
+            </tr>
             <MetricRow
               label="Entry speed"
               a={row.a.entry_speed_kph}
@@ -359,7 +570,11 @@ function CornerDetail({ row }: { row: CornerComparison }) {
       </Panel>
 
       <Panel title="Caveats" bodyClassName="p-3 space-y-2">
-        <NoteList notes={row.notes} />
+        <NoteList
+          notes={Array.from(new Set(row.notes)).map((note) =>
+            nameDrivers(note, pair.a.name, pair.b.name),
+          )}
+        />
         {!row.notes.length && (
           <p className="text-2xs text-ink-faint">
             No additional caveats recorded for this corner.

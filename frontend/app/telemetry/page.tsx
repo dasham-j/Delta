@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { EChartsOption } from "echarts";
 
 import { DriverLapPicker } from "@/components/DriverLapPicker";
+import { FlashValue, Reveal } from "@/components/Motion";
 import { SessionPicker, useSelection } from "@/components/SessionPicker";
 import {
   CHART_BASE,
@@ -104,7 +105,11 @@ export default function TelemetryPage() {
           <ErrorPanel error={comparison.error} onRetry={comparison.reload} />
         </Panel>
       ) : comparison.data ? (
-        <Comparison data={comparison.data} drivers={drivers.data?.drivers ?? []} />
+        <Reveal
+          key={`${selection.sessionKey}-${selection.driverA}-${selection.driverB}-${selection.lapA}-${selection.lapB}`}
+        >
+          <Comparison data={comparison.data} drivers={drivers.data?.drivers ?? []} />
+        </Reveal>
       ) : null}
     </div>
   );
@@ -385,7 +390,11 @@ function Stat({
         <p className="text-2xs uppercase tracking-wider text-ink-faint">{label}</p>
         <ProvenanceBadge kind={kind} />
       </div>
-      <p className="num mt-1.5 text-xl text-ink">{value}</p>
+      <p className="num mt-1.5 text-xl text-ink">
+        <FlashValue value={value} color="#4da6ff">
+          {value}
+        </FlashValue>
+      </p>
     </div>
   );
 }

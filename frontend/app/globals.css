@@ -10,13 +10,20 @@
 
 html,
 body {
-  background: #07080a;
-  color: #e9edf2;
+  background: #06070a;
+  color: #eef2f7;
 }
 
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  /* A faint trackside vignette so the chrome recedes and the data sits forward. */
+  background-image: radial-gradient(
+    120% 90% at 50% -10%,
+    rgba(77, 166, 255, 0.05),
+    transparent 60%
+  );
+  background-attachment: fixed;
 }
 
 /* Numbers must line up vertically in every table in the application. */
@@ -28,7 +35,7 @@ body {
 
 @layer components {
   .panel {
-    @apply rounded border border-graphite-700 bg-graphite-900;
+    @apply rounded-md border border-graphite-700 bg-graphite-900/80;
   }
 
   .panel-header {
@@ -80,6 +87,53 @@ body {
   .data-table tbody tr:hover {
     @apply bg-graphite-850;
   }
+
+  /* ---- Timing tower (motion list, not a <table>, so rows can animate) ---- */
+
+  .tower-head {
+    @apply sticky top-0 z-10 grid items-center gap-x-2.5 border-b border-graphite-700
+           bg-graphite-850/95 px-2 py-2 text-2xs font-semibold uppercase
+           tracking-wider text-ink-faint backdrop-blur;
+  }
+
+  .tower-row {
+    @apply relative grid items-center gap-x-2.5 border-b border-graphite-800 px-2 py-2.5;
+  }
+
+  /* A hairline between logical column groups so numbers stop running together. */
+  .tower-sep {
+    @apply border-l border-graphite-700/70 pl-2.5;
+  }
+
+  .tower-row:hover {
+    @apply bg-graphite-850/70;
+  }
+
+  /* The team-colour spine down the left edge of every row. */
+  .tower-row::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--team, #5d6670);
+    opacity: 0.9;
+  }
+
+  .pos-box {
+    @apply flex h-6 w-6 items-center justify-center rounded num text-sm font-bold text-ink;
+    background: color-mix(in srgb, var(--team, #2a323b) 20%, #0f1216);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--team, #2a323b) 45%, transparent);
+  }
+
+  .tyre-pill {
+    @apply flex h-5 w-5 items-center justify-center rounded-full border text-2xs font-bold;
+  }
+
+  .cell-flash {
+    animation: var(--tw-flash, flash) 0.75s ease-out;
+  }
 }
 
 /* Scrollbars that read as instrument chrome rather than OS furniture. */
@@ -88,22 +142,26 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-track {
-  background: #0b0d10;
+  background: #0a0c10;
 }
 ::-webkit-scrollbar-thumb {
   background: #2a323b;
   border-radius: 5px;
-  border: 2px solid #0b0d10;
+  border: 2px solid #0a0c10;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #3a444f;
 }
 
+/* Functional motion only, and never for anyone who has asked for less of it.
+ * This also neutralises the value-flash and row-reorder animations. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
   *::after {
     animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type { EChartsOption } from "echarts";
 
+import { FlashValue, Reveal } from "@/components/Motion";
 import { SessionPicker, useSelection } from "@/components/SessionPicker";
 import {
   CHART_BASE,
@@ -119,7 +120,7 @@ export default function StrategyPage() {
           />
         </Panel>
       ) : (
-        <>
+        <Reveal className="space-y-3" key={String(sessionKey)}>
           <Panel title="Stint timeline" bodyClassName="overflow-auto p-3">
             <StintTimeline stints={stints} acronyms={acronyms} />
           </Panel>
@@ -189,7 +190,7 @@ export default function StrategyPage() {
               </div>
             </Panel>
           ) : null}
-        </>
+        </Reveal>
       )}
     </div>
   );
@@ -423,14 +424,16 @@ function UndercutCalculator({ stints }: { stints: StintSummary[] }) {
       {scenario.data ? (
         <div className="space-y-2">
           <div className="flex items-baseline gap-2">
-            <span
+            <FlashValue
+              value={scenario.data.net_seconds}
+              color={scenario.data.net_seconds > 0 ? "#2ee6a8" : "#ff4d5e"}
               className={`num text-2xl ${
                 scenario.data.net_seconds > 0 ? "text-signal-ok" : "text-signal-alert"
               }`}
             >
               {scenario.data.net_seconds > 0 ? "+" : "−"}
               {Math.abs(scenario.data.net_seconds).toFixed(2)} s
-            </span>
+            </FlashValue>
             <ProvenanceBadge kind="estimated" />
           </div>
           <table className="data-table">

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { Nav } from "@/components/Nav";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,37 +11,29 @@ export const metadata: Metadata = {
     "Formula 1 telemetry, lap delta, corner and strategy analysis for race engineers.",
 };
 
-const NAV = [
-  { href: "/", label: "Timing" },
-  { href: "/telemetry", label: "Telemetry Lab" },
-  { href: "/corners", label: "Corners" },
-  { href: "/strategy", label: "Strategy" },
-  { href: "/engineer", label: "Race Engineer" },
-  { href: "/agent", label: "Agent" },
-];
-
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className="min-h-screen bg-graphite-950">
         <div className="flex min-h-screen flex-col">
-          <header className="sticky top-0 z-30 border-b border-graphite-700 bg-graphite-950/95 backdrop-blur">
+          <header className="sticky top-0 z-30 border-b border-graphite-700 bg-graphite-950/90 backdrop-blur">
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2">
-              <Link href="/" className="flex items-baseline gap-2">
-                <span className="text-sm font-bold tracking-[0.2em] text-ink">DELTA</span>
+              <Link href="/" className="flex items-center gap-2">
+                <span
+                  className="h-4 w-1 rounded-full bg-signal-info"
+                  aria-hidden
+                />
+                <span className="text-sm font-bold tracking-[0.22em] text-ink">
+                  DELTA
+                </span>
+                <span className="hidden text-2xs uppercase tracking-[0.18em] text-ink-faint sm:inline">
+                  F1 Analysis
+                </span>
               </Link>
 
-              <nav className="flex flex-wrap items-center gap-1" aria-label="Workspaces">
-                {NAV.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="rounded px-2.5 py-1 text-2xs font-medium uppercase tracking-wider text-ink-muted transition-colors hover:bg-graphite-800 hover:text-ink"
-                  >
-                    {item.label}
-                  </Link>
-                ))}
-              </nav>
+              <Suspense fallback={<div className="h-6" />}>
+                <Nav />
+              </Suspense>
             </div>
           </header>
 
